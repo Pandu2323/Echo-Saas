@@ -64,6 +64,8 @@ model User {
   kanbanCards         KanbanCard[]
   kanbanCardsCreated  KanbanCard[]    @relation("KanbanCardCreator")
   kanbanComments      KanbanComment[]
+  createdEvents   SchedulerEvent[] @relation("EventCreator")
+  eventAttendees  EventAttendee[]
 }
 
 model Workspace {
@@ -89,6 +91,7 @@ model Workspace {
   decayLogs       KnowledgeDecayLog[]
   contradictions  KnowledgeContradiction[]
   kanbanBoard KanbanBoard?
+  events SchedulerEvent[]
 }
 
 model Membership {
@@ -466,4 +469,46 @@ model KanbanAttachment {
 
   card      KanbanCard @relation(fields: [cardId], references: [id], onDelete: Cascade)
   cardId    String
+}
+
+enum EventStatus {
+  UPCOMING
+  CONFIRMED
+  TENTATIVE
+}
+
+model SchedulerEvent {
+  id          String      @id @default(cuid())
+  title       String
+  date        DateTime    // date only (store as midnight UTC)
+  startTime   String      // "2:30 pm" — stored as string for simplicity
+  endTime     String?
+  location    String?
+  status      EventStatus @default(UPCOMING)
+  isPersonal  Boolean     @default(false)  // false = workspace, true = personal
+  needsReply  Boolean     @default(false)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  creator     User        @relation("EventCreator", fields: [creatorId], references: [id], onDelete: Cascade)
+  creatorId   String
+
+  workspace   Workspace   @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  workspaceId String
+
+  attendees   EventAttendee[]
+}
+
+model EventAttendee {
+  id       String         @id @default(cuid())
+  replied  Boolean        @default(false)
+  accepted Boolean?       // null = no reply, true = accepted, false = declined
+
+  event    SchedulerEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  eventId  String
+
+  user     User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId   String
+
+  @@unique([eventId, userId])
 }

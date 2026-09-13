@@ -13,7 +13,8 @@ import { useState } from "react";
 import {
   LayoutDashboard, LayoutGrid, Video, PenTool,
   Workflow, Network, MessageSquare, Bot,
-  Settings, Shield, CreditCard, Plus, Kanban
+  Settings, Shield, CreditCard, Plus, Kanban,
+  CalendarDays
 } from "lucide-react";
 import { Role } from "@prisma/client";
 
@@ -26,6 +27,7 @@ const navItems = [
   { href: "/knowledge", label: "Knowledge", icon: Network },
   { href: "/chat", label: "Chat", icon: MessageSquare },
   { href: "/kanban", label: "Kanban", icon: Kanban },
+  { href: "/scheduler", label: "Scheduler", icon: CalendarDays },
   // { href: "/agents", label: "Agents", icon: Bot },
   { href: "/knowledge-health", label: "KG Health", icon: Shield },
   { href: "/settings", label: "Settings", icon: Settings },
