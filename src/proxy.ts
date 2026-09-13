@@ -25,6 +25,7 @@ const isProtectedRoute = createRouteMatcher([
   "/api/kanban(.*)",
   "/scheduler(.*)",
   "/api/scheduler(.*)",
+  "/sentracode(.*)",
 ]);
 
 export default clerkMiddleware(async (auth, req) => {
