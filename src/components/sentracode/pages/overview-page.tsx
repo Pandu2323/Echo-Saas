@@ -4,7 +4,6 @@
 import { useEffect, useRef } from "react";
 import { StatCard, SBadge, DiffBlock, Card, CardHead } from "../sentra-ui";
 import { ArrowRight, Server, AlertTriangle, CheckCheck, ShieldCheck } from "lucide-react";
-import type { Page } from "../types";
 
 export function OverviewPage({ onNavigate }: { onNavigate: (p: any) => void }) {
   const langRef = useRef<HTMLCanvasElement>(null);

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { Download, ChevronRight, Check, GitPullRequest, X } from "lucide-react";
 import { SBadge, DiffBlock, Card } from "../sentra-ui";
 
@@ -127,7 +127,7 @@ export function VulnerabilitiesPage() {
           </thead>
           <tbody>
             {filtered.map((v, i) => (
-              <>
+              <Fragment key={`${v.repo}-${v.file}-${v.line}`}>
                 <tr
                   key={i}
                   onClick={() => setExpanded(expanded === i ? null : i)}
@@ -169,7 +169,7 @@ export function VulnerabilitiesPage() {
                     </td>
                   </tr>
                 )}
-              </>
+              </Fragment>
             ))}
           </tbody>
         </table>
