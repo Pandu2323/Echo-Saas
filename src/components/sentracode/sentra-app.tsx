@@ -2,15 +2,19 @@
 
 import { useState, useCallback } from "react";
 import {
-  LayoutDashboard, GitBranch, GitCommit, Bug,
-  GitPullRequest, Settings
+  LayoutDashboard,
+  GitBranch,
+  GitCommit,
+  Bug,
+  GitPullRequest,
+  Settings,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { OverviewPage }       from "./pages/overview-page";
-import { RepositoriesPage }   from "./pages/repositories-page";
-import { RepoDetailPage }     from "./pages/repo-detail-page";
-import { VulnerabilitiesPage} from "./pages/vulnerabilities-page";
-import { PullRequestsPage }   from "./pages/pull-requests-page";
+import { OverviewPage } from "./pages/overview-page";
+import { RepositoriesPage } from "./pages/repositories-page";
+import { RepoDetailPage } from "./pages/repo-detail-page";
+import { VulnerabilitiesPage } from "./pages/vulnerabilities-page";
+import { PullRequestsPage } from "./pages/pull-requests-page";
 import { SentraSettingsPage } from "./pages/sentra-settings-page";
 
 type Page =
@@ -25,30 +29,33 @@ const NAV = [
   {
     label: "Monitor",
     items: [
-      { id: "overview",      label: "Overview",         Icon: LayoutDashboard },
-      { id: "repositories",  label: "Repositories",     Icon: GitBranch       },
-      { id: "repo-detail",   label: "Commit activity",  Icon: GitCommit       },
+      { id: "overview", label: "Overview", Icon: LayoutDashboard },
+      { id: "repositories", label: "Repositories", Icon: GitBranch },
+      { id: "repo-detail", label: "Commit activity", Icon: GitCommit },
     ],
   },
   {
     label: "Security",
     items: [
-      { id: "vulnerabilities", label: "Vulnerabilities", Icon: Bug             },
-      { id: "pull-requests",   label: "Pull requests",   Icon: GitPullRequest  },
+      { id: "vulnerabilities", label: "Vulnerabilities", Icon: Bug },
+      { id: "pull-requests", label: "Pull requests", Icon: GitPullRequest },
     ],
   },
   {
     label: "Workspace",
-    items: [
-      { id: "settings", label: "Settings", Icon: Settings },
-    ],
+    items: [{ id: "settings", label: "Settings", Icon: Settings }],
   },
 ];
 
 export function SentraCodeApp() {
-  const [page,    setPage   ] = useState<Page>("overview");
+  const [page, setPage] = useState<Page>("overview");
 
-  const go = useCallback((p: Page) => setPage(p), []);
+  const [pageExtra, setPageExtra] = useState<Record<string, unknown>>({});
+
+  const go = useCallback((p: Page, extra?: Record<string, unknown>) => {
+    setPage(p);
+    if (extra) setPageExtra(extra);
+  }, []);
 
   return (
     <div
@@ -62,7 +69,9 @@ export function SentraCodeApp() {
       >
         {/* brand */}
         <div className="mb-5 flex items-center gap-2.5 px-2">
-          <span className="text-xl font-semibold text-white">SentraCode Tool</span>
+          <span className="text-xl font-semibold text-white">
+            SentraCode Tool
+          </span>
         </div>
 
         {/* nav */}
@@ -80,7 +89,7 @@ export function SentraCodeApp() {
                     "flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-[12.5px] transition-colors",
                     page === id
                       ? "bg-primary/12 text-primary font-medium"
-                      : "text-white/40 hover:bg-white/4 hover:text-white/70"
+                      : "text-white/40 hover:bg-white/4 hover:text-white/70",
                   )}
                 >
                   <Icon className="h-3.5 w-3.5 shrink-0" />
@@ -96,7 +105,9 @@ export function SentraCodeApp() {
           <div className="flex items-start gap-2">
             <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-400" />
             <p className="text-[11px] leading-relaxed text-white/25">
-              <span className="font-medium text-white/50">Connected to GitHub</span>
+              <span className="font-medium text-white/50">
+                Connected to GitHub
+              </span>
             </p>
           </div>
         </div>
@@ -106,17 +117,19 @@ export function SentraCodeApp() {
       <div className="flex flex-1 flex-col overflow-hidden">
         {/* topbar */}
         <div className="flex h-12 shrink-0 items-center justify-between border-b border-white/5 px-5">
-          <span className="text-xl font-semibold text-white">AI Security Code Review System</span>
+          <span className="text-xl font-semibold text-white">
+            AI Security Code Review System
+          </span>
         </div>
 
         {/* page content */}
         <div className="flex-1 overflow-y-auto">
-          {page === "overview"       && <OverviewPage       onNavigate={go} />}
-          {page === "repositories"   && <RepositoriesPage   onNavigate={go} />}
-          {page === "repo-detail"    && <RepoDetailPage                      />}
-          {page === "vulnerabilities"&& <VulnerabilitiesPage                 />}
-          {page === "pull-requests"  && <PullRequestsPage                    />}
-          {page === "settings"       && <SentraSettingsPage onNavigate={go} />}
+          {page === "overview" && <OverviewPage onNavigate={go} />}
+          {page === "repositories" && <RepositoriesPage onNavigate={go} />}
+          {page === "repo-detail" && <RepoDetailPage repoId={pageExtra.repoId as string} />}
+          {page === "vulnerabilities" && <VulnerabilitiesPage />}
+          {page === "pull-requests" && <PullRequestsPage />}
+          {page === "settings" && <SentraSettingsPage onNavigate={go} />}
         </div>
       </div>
     </div>
