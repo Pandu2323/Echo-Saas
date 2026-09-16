@@ -141,13 +141,18 @@ export async function POST(req: Request) {
   const userMessage = `Context from your documents:\n\n${contextBlock}\n\n---\n\nQuestion: ${question}`;
 
   // 4. pick model — connected agent or echo-nemo-1.0
+  // Only look up a BYOK agent when the client explicitly selected one.
+  // Previously, when preferredProvider was empty/undefined, the `where`
+  // clause below dropped the provider filter and matched *any* active
+  // key — meaning selecting "echo-nemo-1.0" in the UI silently kept using
+  // whatever BYOK agent was connected instead of the default model.
   let agentKey = null;
-  if (user) {
+  if (user && preferredProvider && preferredProvider !== "default") {
     agentKey = await db.agentKey.findFirst({
       where: {
         userId: user.id,
         isActive: true,
-        ...(preferredProvider ? { provider: preferredProvider } : {}),
+        provider: preferredProvider,
       },
     });
   }
@@ -164,17 +169,38 @@ export async function POST(req: Request) {
   ];
 
   if (agentKey) {
-    const decrypted = decrypt(agentKey.keyHash);
-    const result = await callAgentModel(
-      agentKey.provider,
-      agentKey.model,
-      decrypted,
-      SYSTEM_PROMPT,
-      history,
-      userMessage,
-    );
-    answer = result.answer;
-    modelUsed = `${agentKey.provider} / ${agentKey.model}`;
+    try {
+      const decrypted = decrypt(agentKey.keyHash);
+      const result = await callAgentModel(
+        agentKey.provider,
+        agentKey.model,
+        decrypted,
+        SYSTEM_PROMPT,
+        history,
+        userMessage,
+      );
+      answer = result.answer;
+      modelUsed = `${agentKey.provider} / ${result.modelUsed}`;
+    } catch (err) {
+      console.error(`BYOK agent error (${agentKey.provider}):`, err);
+      if (err instanceof TransientProviderError) {
+        return NextResponse.json(
+          {
+            error: "agent_unavailable",
+            reason: `${agentKey.provider} (${agentKey.model}) is temporarily overloaded on their end. Try again in a few seconds.`,
+            retryAfter: 5,
+          },
+          { status: 503 },
+        );
+      }
+      return NextResponse.json(
+        {
+          error: "agent_call_failed",
+          reason: `Failed to get a response from ${agentKey.provider} (${agentKey.model}): ${(err as Error).message}`,
+        },
+        { status: 502 },
+      );
+    }
   } else {
     const completion = await groq.chat.completions.create({
       model: "openai/gpt-oss-20b",
@@ -195,6 +221,69 @@ export async function POST(req: Request) {
   });
 }
 
+// Google periodically shuts down old Gemini model IDs. Rather than making
+// every user with a stale saved connection hit a 404 until they manually
+// reconnect, remap known-retired IDs to their current replacement here.
+// Keep this list updated as Google deprecates models.
+const GEMINI_MODEL_REMAP: Record<string, string> = {
+  "gemini-2.0-flash": "gemini-3.6-flash",
+  "gemini-2.0-flash-lite": "gemini-3.5-flash-lite",
+  "gemini-1.5-pro": "gemini-3.5-flash",
+  "gemini-1.5-flash": "gemini-3.5-flash",
+  "gemini-1.5-flash-8b": "gemini-3.5-flash-lite",
+  "gemini-pro": "gemini-3.5-flash",
+};
+
+function resolveGeminiModel(model: string): string {
+  const replacement = GEMINI_MODEL_REMAP[model];
+  if (replacement) {
+    console.warn(
+      `Gemini model "${model}" is deprecated — using "${replacement}" instead. Reconnect the agent to update the stored model.`,
+    );
+    return replacement;
+  }
+  return model;
+}
+
+// Thrown when a provider call fails for a reason that's likely to resolve on
+// its own shortly (rate limiting, momentary overload). The route surfaces
+// this differently from a hard failure so the client can offer a retry
+// instead of treating it as broken.
+class TransientProviderError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "TransientProviderError";
+  }
+}
+
+function isTransientStatus(status: number): boolean {
+  return status === 429 || status === 503 || (status >= 500 && status < 600);
+}
+
+// Fetch with a couple of short retries for transient upstream errors.
+// Non-transient errors (401, 403, 404, 400, etc.) are returned immediately
+// so the caller can fail fast with the real reason.
+async function fetchWithRetry(
+  url: string,
+  options: RequestInit,
+  retries = 2,
+  baseDelayMs = 700,
+): Promise<Response> {
+  let lastRes: Response | null = null;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    const res = await fetch(url, options);
+    if (res.ok || !isTransientStatus(res.status)) {
+      return res;
+    }
+    lastRes = res;
+    if (attempt < retries) {
+      const delay = baseDelayMs * Math.pow(2, attempt);
+      await new Promise((r) => setTimeout(r, delay));
+    }
+  }
+  return lastRes!;
+}
+
 async function callAgentModel(
   provider: string,
   model: string,
@@ -202,14 +291,17 @@ async function callAgentModel(
   systemPrompt: string,
   history: Array<{ role: string; content: string }>,
   userMessage: string,
-): Promise<{ answer: string }> {
+): Promise<{ answer: string; modelUsed: string }> {
   const messages = [
-    ...history.slice(-6),
-    { role: "user", content: userMessage },
+    ...history.slice(-6).map((h) => ({
+      role: h.role as "user" | "assistant",
+      content: h.content,
+    })),
+    { role: "user" as const, content: userMessage },
   ];
 
   if (provider === "openai") {
-    const res = await fetch("https://api.openai.com/v1/chat/completions", {
+    const res = await fetchWithRetry("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: {
         Authorization: `Bearer ${apiKey}`,
@@ -222,12 +314,19 @@ async function callAgentModel(
         max_tokens: 800,
       }),
     });
+    if (!res.ok) {
+      const err = await res.text();
+      console.error("OpenAI API error:", err);
+      const message = `OpenAI API error: ${res.status} ${err}`;
+      if (isTransientStatus(res.status)) throw new TransientProviderError(message);
+      throw new Error(message);
+    }
     const data = await res.json();
-    return { answer: data.choices?.[0]?.message?.content ?? "No response." };
+    return { answer: data.choices?.[0]?.message?.content ?? "No response.", modelUsed: model };
   }
 
   if (provider === "claude") {
-    const res = await fetch("https://api.anthropic.com/v1/messages", {
+    const res = await fetchWithRetry("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: {
         "x-api-key": apiKey,
@@ -241,13 +340,21 @@ async function callAgentModel(
         max_tokens: 800,
       }),
     });
+    if (!res.ok) {
+      const err = await res.text();
+      console.error("Claude API error:", err);
+      const message = `Claude API error: ${res.status} ${err}`;
+      if (isTransientStatus(res.status)) throw new TransientProviderError(message);
+      throw new Error(message);
+    }
     const data = await res.json();
-    return { answer: data.content?.[0]?.text ?? "No response." };
+    return { answer: data.content?.[0]?.text ?? "No response.", modelUsed: model };
   }
 
   if (provider === "gemini") {
-    const res = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+    const resolvedModel = resolveGeminiModel(model);
+    const res = await fetchWithRetry(
+      `https://generativelanguage.googleapis.com/v1beta/models/${resolvedModel}:generateContent?key=${apiKey}`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -257,17 +364,34 @@ async function callAgentModel(
             role: m.role === "assistant" ? "model" : "user",
             parts: [{ text: m.content }],
           })),
+          generationConfig: {
+            maxOutputTokens: 800,
+            temperature: 0.1,
+          },
         }),
       },
     );
+    if (!res.ok) {
+      const err = await res.text();
+      console.error("Gemini API error:", err);
+      const message = `Gemini API error: ${res.status} ${err}`;
+      if (isTransientStatus(res.status)) throw new TransientProviderError(message);
+      throw new Error(message);
+    }
     const data = await res.json();
-    return {
-      answer: data.candidates?.[0]?.content?.parts?.[0]?.text ?? "No response.",
-    };
+    const candidate = data.candidates?.[0];
+    // Gemini can return a candidate with no text (e.g. finishReason: "SAFETY"
+    // or "MAX_TOKENS") — surface that instead of a silent generic fallback.
+    const text = candidate?.content?.parts?.[0]?.text;
+    if (!text) {
+      const finishReason = candidate?.finishReason ?? "unknown";
+      throw new Error(`Gemini returned no content (finishReason: ${finishReason})`);
+    }
+    return { answer: text, modelUsed: resolvedModel };
   }
 
   if (provider === "mistral") {
-    const res = await fetch("https://api.mistral.ai/v1/chat/completions", {
+    const res = await fetchWithRetry("https://api.mistral.ai/v1/chat/completions", {
       method: "POST",
       headers: {
         Authorization: `Bearer ${apiKey}`,
@@ -280,9 +404,16 @@ async function callAgentModel(
         max_tokens: 800,
       }),
     });
+    if (!res.ok) {
+      const err = await res.text();
+      console.error("Mistral API error:", err);
+      const message = `Mistral API error: ${res.status} ${err}`;
+      if (isTransientStatus(res.status)) throw new TransientProviderError(message);
+      throw new Error(message);
+    }
     const data = await res.json();
-    return { answer: data.choices?.[0]?.message?.content ?? "No response." };
+    return { answer: data.choices?.[0]?.message?.content ?? "No response.", modelUsed: model };
   }
 
-  return { answer: "Unsupported provider." };
+  throw new Error(`Unsupported provider: ${provider}`);
 }

@@ -82,9 +82,9 @@ const AGENTS: AgentDef[] = [
     keyHint: "Starts with AIzaSy",
     docsUrl: "https://aistudio.google.com/apikey",
     models: [
-      { id: "gemini-2.0-flash", name: "Gemini 2.0 Flash" },
-      { id: "gemini-1.5-pro",   name: "Gemini 1.5 Pro" },
-      { id: "gemini-1.5-flash", name: "Gemini 1.5 Flash" },
+      { id: "gemini-3.6-flash",     name: "Gemini 3.6 Flash" },
+      { id: "gemini-3.5-flash",     name: "Gemini 3.5 Flash" },
+      { id: "gemini-3.5-flash-lite", name: "Gemini 3.5 Flash-Lite" },
     ],
   },
   {
@@ -228,6 +228,7 @@ function ApiAgentCard({
   };
 
   const closeForm = () => {
+    if (saving) return;
     setExpanded(false);
     setApiKey("");
     setError(null);
@@ -384,15 +385,27 @@ function ApiAgentCard({
             </p>
           )}
 
-          <button
-            onClick={handleConnect}
-            disabled={saving || !apiKey.trim()}
-            className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-primary py-2 text-[11px] font-semibold text-white transition-colors duration-150 hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            {saving
-              ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Validating…</>
-              : <><Check className="h-3.5 w-3.5" /> Connect</>}
-          </button>
+          {/* actions — cancel + connect */}
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={closeForm}
+              disabled={saving}
+              className="flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-white/[0.09] bg-white/[0.03] py-2 text-[11px] font-medium text-white/50 transition-colors duration-150 hover:border-white/[0.16] hover:bg-white/[0.06] hover:text-white/80 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              <X className="h-3.5 w-3.5" />
+              Cancel
+            </button>
+            <button
+              onClick={handleConnect}
+              disabled={saving || !apiKey.trim()}
+              className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-primary py-2 text-[11px] font-semibold text-white transition-colors duration-150 hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              {saving
+                ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Validating…</>
+                : <><Check className="h-3.5 w-3.5" /> Connect</>}
+            </button>
+          </div>
 
           {agent.docsUrl && (
             <a
