@@ -11,9 +11,21 @@ import { WorkspaceManager } from "./workspace-manager";
 import { useWorkspace } from "@/lib/workspace-context";
 import { useState } from "react";
 import {
-  LayoutDashboard, LayoutGrid, Video, PenTool,
-  Workflow, Network, MessageSquare, Bot,
-  Settings, Shield, CreditCard, Plus, Kanban
+  LayoutDashboard,
+  LayoutGrid,
+  Video,
+  PenTool,
+  Workflow,
+  Network,
+  MessageSquare,
+  Bot,
+  Settings,
+  Shield,
+  CreditCard,
+  Plus,
+  Kanban,
+  CalendarDays,
+  ShieldAlert,
 } from "lucide-react";
 import { Role } from "@prisma/client";
 
@@ -25,7 +37,9 @@ const navItems = [
   { href: "/workflows", label: "Workflows", icon: Workflow },
   { href: "/knowledge", label: "Knowledge", icon: Network },
   { href: "/chat", label: "Chat", icon: MessageSquare },
+  { href: "/sentracode", label: "SentraCode", icon: ShieldAlert },
   { href: "/kanban", label: "Kanban", icon: Kanban },
+  { href: "/scheduler", label: "Scheduler", icon: CalendarDays },
   // { href: "/agents", label: "Agents", icon: Bot },
   { href: "/knowledge-health", label: "KG Health", icon: Shield },
   { href: "/settings", label: "Settings", icon: Settings },
@@ -99,7 +113,11 @@ export function Sidebar() {
             return (
               <Link
                 key={item.href}
-                href={workspaceId ? `${item.href}?workspaceId=${workspaceId}` : item.href}
+                href={
+                  workspaceId
+                    ? `${item.href}?workspaceId=${workspaceId}`
+                    : item.href
+                }
                 className={cn(
                   "flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors",
                   isActive

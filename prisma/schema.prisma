@@ -64,6 +64,8 @@ model User {
   kanbanCards         KanbanCard[]
   kanbanCardsCreated  KanbanCard[]    @relation("KanbanCardCreator")
   kanbanComments      KanbanComment[]
+  createdEvents   SchedulerEvent[] @relation("EventCreator")
+  eventAttendees  EventAttendee[]
 }
 
 model Workspace {
@@ -89,6 +91,9 @@ model Workspace {
   decayLogs       KnowledgeDecayLog[]
   contradictions  KnowledgeContradiction[]
   kanbanBoard KanbanBoard?
+  events SchedulerEvent[]
+  sentraRepos    SentraRepo[]
+  sentraSettings SentraSettings?
 }
 
 model Membership {
@@ -466,4 +471,177 @@ model KanbanAttachment {
 
   card      KanbanCard @relation(fields: [cardId], references: [id], onDelete: Cascade)
   cardId    String
+}
+
+enum EventStatus {
+  UPCOMING
+  CONFIRMED
+  TENTATIVE
+}
+
+model SchedulerEvent {
+  id          String      @id @default(cuid())
+  title       String
+  date        DateTime    // date only (store as midnight UTC)
+  startTime   String      // "2:30 pm" — stored as string for simplicity
+  endTime     String?
+  location    String?
+  status      EventStatus @default(UPCOMING)
+  isPersonal  Boolean     @default(false)  // false = workspace, true = personal
+  needsReply  Boolean     @default(false)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  creator     User        @relation("EventCreator", fields: [creatorId], references: [id], onDelete: Cascade)
+  creatorId   String
+
+  workspace   Workspace   @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  workspaceId String
+
+  attendees   EventAttendee[]
+}
+
+model EventAttendee {
+  id       String         @id @default(cuid())
+  replied  Boolean        @default(false)
+  accepted Boolean?       // null = no reply, true = accepted, false = declined
+
+  event    SchedulerEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  eventId  String
+
+  user     User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId   String
+
+  @@unique([eventId, userId])
+}
+
+enum ScanStatus {
+  PENDING
+  SCANNING
+  COMPLETED
+  FAILED
+}
+
+enum FindingSeverity {
+  CRITICAL
+  WARNING
+  INFO
+}
+
+enum FindingStatus {
+  OPEN
+  IN_REVIEW
+  FIXED
+  IGNORED
+}
+
+model SentraRepo {
+  id            String      @id @default(cuid())
+  githubUrl     String
+  owner         String
+  repoName      String
+  fullName      String      // owner/repo
+  description   String?
+  isPrivate     Boolean     @default(false)
+  defaultBranch String      @default("main")
+  language      String?
+  languages     Json?       // { TypeScript: 60, Python: 40 }
+  stars         Int         @default(0)
+  forks         Int         @default(0)
+  openIssues    Int         @default(0)
+  openPRs       Int         @default(0)
+  totalCommits  Int         @default(0)
+  lastScanAt    DateTime?
+  scanStatus    ScanStatus  @default(PENDING)
+  riskScore     String?     // A+, B, C etc
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  workspace     Workspace   @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  workspaceId   String
+
+  findings      SentraFinding[]
+  commits       SentraCommit[]
+  scans         SentraScan[]
+
+  @@unique([workspaceId, fullName])
+}
+
+model SentraScan {
+  id            String      @id @default(cuid())
+  status        ScanStatus  @default(PENDING)
+  triggeredBy   String      // "manual" | "push" | "nightly"
+  branch        String      @default("main")
+  filesScanned  Int         @default(0)
+  findingsCount Int         @default(0)
+  duration      Int?        // seconds
+  errorMessage  String?
+  createdAt     DateTime    @default(now())
+  completedAt   DateTime?
+
+  repo          SentraRepo  @relation(fields: [repoId], references: [id], onDelete: Cascade)
+  repoId        String
+
+  findings      SentraFinding[]
+}
+
+model SentraFinding {
+  id              String          @id @default(cuid())
+  severity        FindingSeverity
+  title           String
+  description     String          @db.Text
+  filePath        String
+  lineNumber      Int?
+  cwe             String?         // CWE-89, CWE-79 etc
+  rule            String?
+  snippet         String?         @db.Text  // vulnerable code snippet
+  fix             String?         @db.Text  // AI suggested fix
+  diffBefore      String?         @db.Text
+  diffAfter       String?         @db.Text
+  status          FindingStatus   @default(OPEN)
+  autoFixed       Boolean         @default(false)
+  ignoreReason    String?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  repo            SentraRepo      @relation(fields: [repoId], references: [id], onDelete: Cascade)
+  repoId          String
+
+  scan            SentraScan      @relation(fields: [scanId], references: [id], onDelete: Cascade)
+  scanId          String
+}
+
+model SentraCommit {
+  id          String     @id @default(cuid())
+  sha         String
+  message     String
+  authorName  String
+  authorEmail String
+  branch      String     @default("main")
+  additions   Int        @default(0)
+  deletions   Int        @default(0)
+  filesChanged Int       @default(0)
+  committedAt DateTime
+  createdAt   DateTime   @default(now())
+
+  repo        SentraRepo @relation(fields: [repoId], references: [id], onDelete: Cascade)
+  repoId      String
+
+  @@unique([repoId, sha])
+}
+
+model SentraSettings {
+  id                  String   @id @default(cuid())
+  scanOnPush          Boolean  @default(true)
+  nightlyScan         Boolean  @default(true)
+  autoFixLowRisk      Boolean  @default(false)
+  emailAlerts         Boolean  @default(true)
+  slackAlerts         Boolean  @default(false)
+  alertEmail          String?
+  slackWebhookUrl     String?
+  githubToken         String?  // encrypted
+  updatedAt           DateTime @updatedAt
+
+  workspace           Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  workspaceId         String    @unique
 }

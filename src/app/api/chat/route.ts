@@ -32,7 +32,7 @@ export async function POST(req: Request) {
     }
 
     const completion = await groq.chat.completions.create({
-      model: "llama-3.3-70b-versatile",
+      model: "openai/gpt-oss-120b",
       messages: [
         { role: "system", content: SYSTEM_PROMPT },
         ...messages.slice(-10), // keep last 10 messages for context window
