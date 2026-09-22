@@ -1,6 +1,4 @@
-/* eslint-disable prefer-const */
-/* eslint-disable @typescript-eslint/no-explicit-any */
-import { auth } from "@clerk/nextjs/server";
+ /* eslint-disable @typescript-eslint/no-explicit-any */
 import { db } from "@/lib/db";
 import { NextResponse } from "next/server";
 import {
@@ -9,18 +7,21 @@ import {
   fetchRepoCommits,
   computeRiskScore,
 } from "@/lib/github";
+import { requireSentraAuth } from "@/lib/sentra-cli-auth";
 
 const SCANNER_URL = process.env.SENTRA_SCANNER_URL ?? "http://localhost:8001";
 
 export async function POST(req: Request) {
-  const { userId } = await auth();
-  if (!userId)
+  const ctx = await requireSentraAuth(req);
+  if (!ctx)
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const { repoId, workspaceId } = await req.json();
+  const body = await req.json();
+  const workspaceId = body.workspaceId ?? ctx.workspaceId;
+  const repoId = body.repoId;
 
-  const user = await db.user.findUnique({ where: { clerkId: userId } });
-  if (!user) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  // const user = await db.user.findUnique({ where: { clerkId: userId } });
+  // if (!user) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   const repo = await db.sentraRepo.findUnique({ where: { id: repoId } });
   if (!repo)

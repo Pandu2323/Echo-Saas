@@ -11,6 +11,8 @@ import {
   Save,
   Eye,
   EyeOff,
+  Copy,
+  Terminal,
 } from "lucide-react";
 import { SBadge, Card, CardHead } from "../sentra-ui";
 import { useWorkspace } from "@/lib/workspace-context";
@@ -72,20 +74,12 @@ function SettingsRow({
   return (
     <div className="flex items-center justify-between gap-4 border-t border-white/5 py-4 first:border-0">
       <div className="min-w-0 flex-1">
-        <p className="text-[13px] font-medium text-white/80">
-          {title}
-        </p>
+        <p className="text-[13px] font-medium text-white/80">{title}</p>
 
-        {desc && (
-          <p className="mt-0.5 text-[11.5px] text-white/30">
-            {desc}
-          </p>
-        )}
+        {desc && <p className="mt-0.5 text-[11.5px] text-white/30">{desc}</p>}
       </div>
 
-      <div className="shrink-0">
-        {right}
-      </div>
+      <div className="shrink-0">{right}</div>
     </div>
   );
 }
@@ -112,6 +106,9 @@ export function SentraSettingsPage({
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [showToken, setShowToken] = useState(false);
+  const [cliToken, setCliToken] = useState<string | null>(null);
+  const [genToken, setGenToken] = useState(false);
+  const [showCliToken, setShowCliToken] = useState(false);
 
   const fetchData = useCallback(async () => {
     if (!workspaceId) return;
@@ -147,6 +144,23 @@ export function SentraSettingsPage({
       setTimeout(() => setSaved(false), 2000);
     } finally {
       setSaving(false);
+    }
+  };
+
+  const generateCLIToken = async () => {
+    if (!workspaceId) return;
+    setGenToken(true);
+    try {
+      const res = await fetch("/api/sentra/cli/auth", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ workspaceId }),
+      });
+      const data = await res.json();
+      setCliToken(data.token);
+      setShowCliToken(true);
+    } finally {
+      setGenToken(false);
     }
   };
 
@@ -224,6 +238,67 @@ export function SentraSettingsPage({
           Create a token at github.com/settings/tokens — select repo&quot; scope
           for private repos.
         </p>
+      </Card>
+
+      <Card>
+        <CardHead title="CLI access" />
+        <SettingsRow
+          title="Generate CLI token"
+          desc="Use this token with sentra init to connect the CLI to this workspace."
+          right={
+            <button
+              onClick={generateCLIToken}
+              disabled={genToken}
+              className="flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-[11.5px] text-white/50 hover:bg-white/8 disabled:opacity-40 transition-colors"
+            >
+              {genToken ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Terminal className="h-3.5 w-3.5" />
+              )}
+              Generate token
+            </button>
+          }
+        />
+
+        {cliToken && (
+          <div className="mt-2 rounded-xl border border-primary/25 bg-primary/5 p-4 space-y-2">
+            <p className="text-[11px] text-primary/70 font-medium">
+              CLI token generated — copy it now, it won&apos;t show again:
+            </p>
+            <div className="flex items-center gap-2">
+              <code className="flex-1 rounded-lg bg-black/30 px-3 py-2 font-mono text-[11px] text-emerald-400 break-all">
+                {showCliToken
+                  ? cliToken
+                  : cliToken.slice(0, 12) + "•".repeat(20)}
+              </code>
+              <button
+                onClick={() => setShowCliToken(!showCliToken)}
+                className="shrink-0 rounded-lg border border-white/10 p-2 text-white/30 hover:bg-white/5"
+              >
+                {showCliToken ? (
+                  <EyeOff className="h-3.5 w-3.5" />
+                ) : (
+                  <Eye className="h-3.5 w-3.5" />
+                )}
+              </button>
+              <button
+                onClick={() => navigator.clipboard.writeText(cliToken)}
+                className="shrink-0 rounded-lg border border-white/10 p-2 text-white/30 hover:bg-white/5"
+              >
+                <Copy className="h-3.5 w-3.5" />
+              </button>
+            </div>
+            <div className="rounded-lg bg-black/20 p-3 font-mono text-[11px] text-white/30">
+              <p className="text-white/40 mb-1"># Install and connect:</p>
+              <p>npm install -g @mosaic/sentra</p>
+              <p>sentra init</p>
+              <p className="mt-1 text-white/20">
+                # Then paste token when prompted
+              </p>
+            </div>
+          </div>
+        )}
       </Card>
 
       {/* connected repos */}

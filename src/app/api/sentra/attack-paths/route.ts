@@ -1,16 +1,21 @@
-import { auth } from "@clerk/nextjs/server";
 import { db } from "@/lib/db";
 import { NextResponse } from "next/server";
+import { requireSentraAuth } from "@/lib/sentra-cli-auth";
 
 export async function GET(req: Request) {
-  const { userId } = await auth();
-  if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const ctx = await requireSentraAuth(req);
+  if (!ctx)
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { searchParams } = new URL(req.url);
-  const workspaceId = searchParams.get("workspaceId");
-  const repoId      = searchParams.get("repoId");
+  const workspaceId = searchParams.get("workspaceId") ?? ctx.workspaceId;
+  const repoId = searchParams.get("repoId");
 
-  if (!workspaceId) return NextResponse.json({ error: "workspaceId required" }, { status: 400 });
+  if (!workspaceId)
+    return NextResponse.json(
+      { error: "workspaceId required" },
+      { status: 400 },
+    );
 
   const attackPaths = await db.sentraAttackPath.findMany({
     where: {
@@ -20,10 +25,7 @@ export async function GET(req: Request) {
     include: {
       repo: { select: { fullName: true } },
     },
-    orderBy: [
-      { severity: "asc" },
-      { cvssScore: "desc" },
-    ],
+    orderBy: [{ severity: "asc" }, { cvssScore: "desc" }],
     take: 20,
   });
 

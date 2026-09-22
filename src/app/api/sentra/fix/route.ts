@@ -1,51 +1,56 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { auth } from "@clerk/nextjs/server";
 import { db } from "@/lib/db";
 import { NextResponse } from "next/server";
 import { fetchFileContent } from "@/lib/github";
-import {
-  createBranch, commitFile, createPullRequest,
-} from "@/lib/github-pr";
+import { createBranch, commitFile, createPullRequest } from "@/lib/github-pr";
+import { requireSentraAuth } from "@/lib/sentra-cli-auth";
 
 const SCANNER_URL = process.env.SENTRA_SCANNER_URL ?? "http://localhost:8001";
 
 export async function POST(req: Request) {
-  const { userId } = await auth();
-  if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const ctx = await requireSentraAuth(req);
+  if (!ctx)
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const { findingId, workspaceId, createPR = false } = await req.json();
+  const body = await req.json();
+  const findingId = body.findingId;
+  const workspaceId = body.workspaceId ?? ctx.workspaceId;
+  const createPR = body.createPR ?? false;
 
   if (!findingId || !workspaceId) {
-    return NextResponse.json({ error: "findingId and workspaceId required" }, { status: 400 });
+    return NextResponse.json(
+      { error: "findingId and workspaceId required" },
+      { status: 400 },
+    );
   }
-
-  const user = await db.user.findUnique({ where: { clerkId: userId } });
-  if (!user) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   // get the finding with its repo
   const finding = await db.sentraFinding.findUnique({
-    where:   { id: findingId },
+    where: { id: findingId },
     include: { repo: true },
   });
 
-  if (!finding) return NextResponse.json({ error: "Finding not found" }, { status: 404 });
+  if (!finding)
+    return NextResponse.json({ error: "Finding not found" }, { status: 404 });
   if (finding.repo.workspaceId !== workspaceId) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   // get GitHub token
-  const settings = await db.sentraSettings.findUnique({ where: { workspaceId } });
-  const token    = settings?.githubToken;
+  const settings = await db.sentraSettings.findUnique({
+    where: { workspaceId },
+  });
+  const token = settings?.githubToken;
   if (!token) {
     return NextResponse.json(
       { error: "GitHub token required. Add it in SentraCode Settings." },
-      { status: 400 }
+      { status: 400 },
     );
   }
 
   // mark fix as pending
   const fixRecord = await db.sentraFixVerification.upsert({
-    where:  { findingId },
+    where: { findingId },
     update: { status: "PENDING" },
     create: {
       findingId,
@@ -54,23 +59,23 @@ export async function POST(req: Request) {
   });
 
   // run fix pipeline in background
-  runFixPipeline(
-    finding, fixRecord.id, token, workspaceId, createPR
-  ).catch(console.error);
+  runFixPipeline(finding, fixRecord.id, token, workspaceId, createPR).catch(
+    console.error,
+  );
 
   return NextResponse.json({
-    fixId:   fixRecord.id,
+    fixId: fixRecord.id,
     message: "Fix generation started",
-    status:  "PENDING",
+    status: "PENDING",
   });
 }
 
 async function runFixPipeline(
-  finding:     any,
-  fixId:       string,
-  token:       string,
+  finding: any,
+  fixId: string,
+  token: string,
   workspaceId: string,
-  createPR:    boolean
+  createPR: boolean,
 ) {
   try {
     // ── Step 1: fetch original file content from GitHub ──────────────
@@ -78,14 +83,14 @@ async function runFixPipeline(
       finding.repo.owner,
       finding.repo.repoName,
       finding.filePath,
-      token
+      token,
     );
 
     if (!originalContent) {
       await db.sentraFixVerification.update({
         where: { id: fixId },
         data: {
-          status:    "FAILED",
+          status: "FAILED",
           patchDiff: null,
         },
       });
@@ -94,27 +99,27 @@ async function runFixPipeline(
 
     await db.sentraFixVerification.update({
       where: { id: fixId },
-      data:  { originalCode: originalContent.slice(0, 5000) },
+      data: { originalCode: originalContent.slice(0, 5000) },
     });
 
     // ── Step 2: generate fix via Fix Agent ───────────────────────────
     const findingForAgent = {
-      title:       finding.title,
+      title: finding.title,
       description: finding.description,
-      cwe:         finding.cwe,
-      lineNumber:  finding.lineNumber,
-      snippet:     finding.snippet,
+      cwe: finding.cwe,
+      lineNumber: finding.lineNumber,
+      snippet: finding.snippet,
       remediation: finding.fix,
-      filePath:    finding.filePath,
-      ruleId:      finding.rule,
+      filePath: finding.filePath,
+      ruleId: finding.rule,
     };
 
     const fixRes = await fetch(`${SCANNER_URL}/ai/fix`, {
-      method:  "POST",
+      method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        finding:      findingForAgent,
-        file_path:    finding.filePath,
+        finding: findingForAgent,
+        file_path: finding.filePath,
         file_content: originalContent,
       }),
     });
@@ -122,7 +127,7 @@ async function runFixPipeline(
     if (!fixRes.ok) {
       await db.sentraFixVerification.update({
         where: { id: fixId },
-        data:  { status: "FAILED" },
+        data: { status: "FAILED" },
       });
       return;
     }
@@ -132,7 +137,7 @@ async function runFixPipeline(
     if (!fixData.fixedContent) {
       await db.sentraFixVerification.update({
         where: { id: fixId },
-        data:  { status: "FAILED" },
+        data: { status: "FAILED" },
       });
       return;
     }
@@ -140,26 +145,26 @@ async function runFixPipeline(
     await db.sentraFixVerification.update({
       where: { id: fixId },
       data: {
-        status:     "GENERATED",
-        fixedCode:  fixData.fixedContent.slice(0, 5000),
-        patchDiff:  fixData.patchDiff ?? null,
+        status: "GENERATED",
+        fixedCode: fixData.fixedContent.slice(0, 5000),
+        patchDiff: fixData.patchDiff ?? null,
       },
     });
 
     // ── Step 3: verify the fix ────────────────────────────────────────
     const verifyRes = await fetch(`${SCANNER_URL}/ai/verify`, {
-      method:  "POST",
+      method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        original_finding:  findingForAgent,
-        original_content:  originalContent,
-        fixed_content:     fixData.fixedContent,
-        file_path:         finding.filePath,
+        original_finding: findingForAgent,
+        original_content: originalContent,
+        fixed_content: fixData.fixedContent,
+        file_path: finding.filePath,
       }),
     });
 
     let verifyData: any = {
-      status:            "RESOLVED",
+      status: "RESOLVED",
       verificationNotes: "Verification skipped.",
     };
 
@@ -171,7 +176,7 @@ async function runFixPipeline(
       where: { id: fixId },
       data: {
         verificationStatus: verifyData.status,
-        verificationNotes:  verifyData.verificationNotes ?? null,
+        verificationNotes: verifyData.verificationNotes ?? null,
         reScanFindingCount: verifyData.newFindingsCount ?? 0,
       },
     });
@@ -182,8 +187,8 @@ async function runFixPipeline(
       const baseBranch = finding.repo.defaultBranch;
 
       const branchCreated = await createBranch({
-        owner:      finding.repo.owner,
-        repo:       finding.repo.repoName,
+        owner: finding.repo.owner,
+        repo: finding.repo.repoName,
         branchName,
         baseBranch,
         token,
@@ -191,12 +196,12 @@ async function runFixPipeline(
 
       if (branchCreated) {
         await commitFile({
-          owner:    finding.repo.owner,
-          repo:     finding.repo.repoName,
-          branch:   branchName,
+          owner: finding.repo.owner,
+          repo: finding.repo.repoName,
+          branch: branchName,
           filePath: finding.filePath,
-          content:  fixData.fixedContent,
-          message:  `fix(security): ${finding.title} [SentraCode AI Fix]\n\n${fixData.explanation ?? ""}\n\nFixes: ${finding.cwe ?? "security vulnerability"}\nVerification: ${verifyData.status}`,
+          content: fixData.fixedContent,
+          message: `fix(security): ${finding.title} [SentraCode AI Fix]\n\n${fixData.explanation ?? ""}\n\nFixes: ${finding.cwe ?? "security vulnerability"}\nVerification: ${verifyData.status}`,
           token,
         });
 
@@ -224,11 +229,11 @@ ${verifyData.verificationNotes ?? ""}
 
         const pr = await createPullRequest({
           owner: finding.repo.owner,
-          repo:  finding.repo.repoName,
+          repo: finding.repo.repoName,
           title: `[SentraCode] Fix: ${finding.title}`,
-          body:  prBody,
-          head:  branchName,
-          base:  baseBranch,
+          body: prBody,
+          head: branchName,
+          base: baseBranch,
           token,
         });
 
@@ -236,9 +241,9 @@ ${verifyData.verificationNotes ?? ""}
           await db.sentraFixVerification.update({
             where: { id: fixId },
             data: {
-              status:     "PR_CREATED",
-              prUrl:      pr.url,
-              prNumber:   pr.number,
+              status: "PR_CREATED",
+              prUrl: pr.url,
+              prNumber: pr.number,
               branchName,
             },
           });
@@ -246,7 +251,7 @@ ${verifyData.verificationNotes ?? ""}
           // update finding status
           await db.sentraFinding.update({
             where: { id: finding.id },
-            data:  { status: "IN_REVIEW" },
+            data: { status: "IN_REVIEW" },
           });
         }
       }
@@ -257,30 +262,31 @@ ${verifyData.verificationNotes ?? ""}
       await db.sentraFixVerification.update({
         where: { id: fixId },
         data: {
-          status:     "VERIFIED",
+          status: "VERIFIED",
           verifiedAt: new Date(),
         },
       });
     }
-
   } catch (err) {
     console.error("Fix pipeline error:", err);
     await db.sentraFixVerification.update({
       where: { id: fixId },
-      data:  { status: "FAILED" },
+      data: { status: "FAILED" },
     });
   }
 }
 
 // GET — poll fix status
 export async function GET(req: Request) {
-  const { userId } = await auth();
-  if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const ctx = await requireSentraAuth(req);
+  if (!ctx)
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { searchParams } = new URL(req.url);
   const findingId = searchParams.get("findingId");
 
-  if (!findingId) return NextResponse.json({ error: "findingId required" }, { status: 400 });
+  if (!findingId)
+    return NextResponse.json({ error: "findingId required" }, { status: 400 });
 
   const fix = await db.sentraFixVerification.findUnique({
     where: { findingId },

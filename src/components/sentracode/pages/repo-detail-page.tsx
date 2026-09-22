@@ -85,7 +85,7 @@ function timeAgo(iso: string) {
 
 function CommitBarChart({ daily }: { daily: DailyData[] }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const inited    = useRef(false);
+  // const inited    = useRef(false);
   const chartRef  = useRef<any>(null);
 
   useEffect(() => {
@@ -199,7 +199,7 @@ interface Props {
 }
 
 export function RepoDetailPage({ repoId }: Props) {
-  const { workspaceId } = useWorkspace();
+  // const { workspaceId } = useWorkspace();
 
   const [stats,   setStats  ] = useState<Stats | null>(null);
   const [commits, setCommits] = useState<Commit[]>([]);
@@ -521,7 +521,7 @@ function RepoFindings({ repoId }: { repoId: string }) {
 
   const criticals = findings.filter(f => f.severity === "CRITICAL").length;
   const warnings  = findings.filter(f => f.severity === "WARNING").length;
-  const open      = findings.filter(f => f.status === "OPEN").length;
+  // const open      = findings.filter(f => f.status === "OPEN").length;
 
   if (loading) return null;
   if (findings.length === 0) return null;
