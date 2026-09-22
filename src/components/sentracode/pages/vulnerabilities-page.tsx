@@ -15,6 +15,10 @@ import {
   AlertTriangle,
   ShieldAlert,
   Info,
+  Wand2,
+  CheckCircle2,
+  XCircle,
+  ExternalLink,
 } from "lucide-react";
 import { SBadge, DiffBlock, Card } from "../sentra-ui";
 import { useWorkspace } from "@/lib/workspace-context";
@@ -98,6 +102,8 @@ export function VulnerabilitiesPage() {
   const [updating, setUpdating] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [attackPaths, setAttackPaths] = useState<any[]>([]);
+  const [fixes, setFixes] = useState<Record<string, any>>({});
+  const [fixing, setFixing] = useState<Record<string, boolean>>({});
 
   const fetchFindings = useCallback(async () => {
     if (!workspaceId) return;
@@ -152,6 +158,41 @@ export function VulnerabilitiesPage() {
       await updateFinding(id, status);
     }
     setSelected(new Set());
+  };
+
+  const pollFix = async (findingId: string) => {
+    const interval = setInterval(async () => {
+      const res = await fetch(`/api/sentra/fix?findingId=${findingId}`);
+      const data = await res.json();
+      const fix = data.fix;
+      if (fix) {
+        setFixes((prev) => ({ ...prev, [findingId]: fix }));
+        if (["VERIFIED", "PR_CREATED", "FAILED"].includes(fix.status)) {
+          clearInterval(interval);
+          setFixing((prev) => ({ ...prev, [findingId]: false }));
+          // refresh findings
+          fetchFindings();
+        }
+      }
+    }, 3000);
+  };
+
+  const handleFix = async (findingId: string, withPR: boolean) => {
+    if (!workspaceId) return;
+    setFixing((prev) => ({ ...prev, [findingId]: true }));
+    setFixes((prev) => ({ ...prev, [findingId]: { status: "PENDING" } }));
+
+    const res = await fetch("/api/sentra/fix", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ findingId, workspaceId, createPR: withPR }),
+    });
+
+    if (res.ok) {
+      pollFix(findingId);
+    } else {
+      setFixing((prev) => ({ ...prev, [findingId]: false }));
+    }
   };
 
   const toggleSelect = (id: string) => {
@@ -478,62 +519,61 @@ export function VulnerabilitiesPage() {
                               </div>
                             )}
 
-                            {/* actions */}
-                            {f.status === "OPEN" || f.status === "IN_REVIEW" ? (
-                              <div className="flex gap-2 flex-wrap pt-1">
-                                <button
-                                  onClick={() => updateFinding(f.id, "FIXED")}
-                                  disabled={updating === f.id}
-                                  className="flex items-center gap-1.5 rounded-xl bg-primary px-3 py-1.5 text-[11.5px] font-medium text-white hover:bg-primary/90 disabled:opacity-40 transition-colors"
-                                >
-                                  {updating === f.id ? (
-                                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                                  ) : (
-                                    <GitPullRequest className="h-3.5 w-3.5" />
-                                  )}
-                                  Create PR from fix
-                                </button>
-                                <button
-                                  onClick={() => updateFinding(f.id, "FIXED")}
-                                  disabled={updating === f.id}
-                                  className="flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-[11.5px] text-white/50 hover:bg-white/8 transition-colors"
-                                >
-                                  <Check className="h-3.5 w-3.5" />
-                                  Mark fixed
-                                </button>
-                                <button
-                                  onClick={() =>
-                                    updateFinding(f.id, "IN_REVIEW")
-                                  }
-                                  disabled={updating === f.id}
-                                  className="flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-[11.5px] text-white/40 hover:bg-white/8 transition-colors"
-                                >
-                                  In review
-                                </button>
-                                <button
-                                  onClick={() =>
-                                    updateFinding(f.id, "IGNORED")
-                                  }
-                                  disabled={updating === f.id}
-                                  className="flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-[11.5px] text-white/30 hover:bg-white/8 transition-colors"
-                                >
-                                  <X className="h-3.5 w-3.5" />
-                                  Ignore
-                                </button>
-                              </div>
-                            ) : (
-                              <div className="flex items-center gap-2">
-                                <SBadge sev={STATUS_UI[f.status]}>
-                                  {f.status}
-                                </SBadge>
-                                <button
-                                  onClick={() => updateFinding(f.id, "OPEN")}
-                                  className="text-[11px] text-white/20 hover:text-white/50"
-                                >
-                                  Reopen
-                                </button>
-                              </div>
-                            )}
+                            {/* Fix + Verify panel */}
+                            <div className="pt-3 border-t border-white/5">
+                              {!fixes[f.id] ? (
+                                // initial action buttons
+                                <div className="flex gap-2 flex-wrap">
+                                  <button
+                                    onClick={() => handleFix(f.id, false)}
+                                    disabled={fixing[f.id]}
+                                    className="flex items-center gap-1.5 rounded-xl bg-primary px-3 py-2 text-[11.5px] font-medium text-white hover:bg-primary/90 disabled:opacity-40 transition-colors"
+                                  >
+                                    {fixing[f.id] ? (
+                                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                    ) : (
+                                      <Wand2 className="h-3.5 w-3.5" />
+                                    )}
+                                    Generate AI fix
+                                  </button>
+                                  <button
+                                    onClick={() => handleFix(f.id, true)}
+                                    disabled={fixing[f.id]}
+                                    className="flex items-center gap-1.5 rounded-xl border border-primary/30 bg-primary/8 px-3 py-2 text-[11.5px] text-primary hover:bg-primary/15 disabled:opacity-40 transition-colors"
+                                  >
+                                    {fixing[f.id] ? (
+                                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                    ) : (
+                                      <GitPullRequest className="h-3.5 w-3.5" />
+                                    )}
+                                    Fix + Create PR
+                                  </button>
+                                  <button
+                                    onClick={() =>
+                                      updateFinding(f.id, "IN_REVIEW")
+                                    }
+                                    className="flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-[11.5px] text-white/40 hover:bg-white/8 transition-colors"
+                                  >
+                                    Mark in review
+                                  </button>
+                                  <button
+                                    onClick={() =>
+                                      updateFinding(f.id, "IGNORED")
+                                    }
+                                    className="flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-[11.5px] text-white/30 hover:bg-white/8 transition-colors"
+                                  >
+                                    <X className="h-3.5 w-3.5" />
+                                    Ignore
+                                  </button>
+                                </div>
+                              ) : (
+                                // fix progress / result
+                                <FixStatusPanel
+                                  fix={fixes[f.id]}
+                                  isFixing={fixing[f.id]}
+                                />
+                              )}
+                            </div>
                           </div>
                         </td>
                       </tr>
@@ -647,6 +687,136 @@ export function VulnerabilitiesPage() {
             </div>
           )}
         </>
+      )}
+    </div>
+  );
+}
+
+function FixStatusPanel({
+  fix,
+  isFixing,
+}: {
+  fix: any;
+  isFixing: boolean;
+}) {
+  const STATUS_CONFIG: Record<
+    string,
+    { icon: React.ReactNode; label: string; color: string }
+  > = {
+    PENDING: {
+      icon: <Loader2 className="h-4 w-4 animate-spin text-primary" />,
+      label: "Generating fix…",
+      color: "border-primary/20 bg-primary/5",
+    },
+    GENERATED: {
+      icon: <Loader2 className="h-4 w-4 animate-spin text-amber-400" />,
+      label: "Verifying fix…",
+      color: "border-amber-500/20 bg-amber-500/5",
+    },
+    VERIFIED: {
+      icon: <CheckCircle2 className="h-4 w-4 text-emerald-400" />,
+      label: "Fix verified",
+      color: "border-emerald-500/20 bg-emerald-500/5",
+    },
+    PR_CREATED: {
+      icon: <GitPullRequest className="h-4 w-4 text-blue-400" />,
+      label: "PR created",
+      color: "border-blue-500/20 bg-blue-500/5",
+    },
+    FAILED: {
+      icon: <XCircle className="h-4 w-4 text-red-400" />,
+      label: "Fix failed",
+      color: "border-red-500/20 bg-red-500/5",
+    },
+  };
+
+  const cfg = STATUS_CONFIG[fix?.status] ?? STATUS_CONFIG.PENDING;
+
+  return (
+    <div className={`rounded-xl border p-4 space-y-3 ${cfg.color}`}>
+      {/* status header */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          {cfg.icon}
+          <span className="text-[12.5px] font-medium text-white/70">
+            {cfg.label}
+          </span>
+        </div>
+        {fix?.verificationStatus && (
+          <span
+            className={`text-[11px] font-medium px-2 py-0.5 rounded-lg ${
+              fix.verificationStatus === "RESOLVED"
+                ? "bg-emerald-500/15 text-emerald-400"
+                : fix.verificationStatus === "REGRESSION"
+                  ? "bg-red-500/15 text-red-400"
+                  : fix.verificationStatus === "PARTIAL"
+                    ? "bg-amber-500/15 text-amber-400"
+                    : "bg-white/10 text-white/30"
+            }`}
+          >
+            Verify: {fix.verificationStatus}
+          </span>
+        )}
+      </div>
+
+      {/* patch diff */}
+      {fix?.patchDiff && (
+        <div>
+          <p className="mb-1.5 text-[10px] font-medium uppercase tracking-wider text-white/20">
+            AI-generated patch
+          </p>
+          <div className="overflow-x-auto rounded-lg border border-white/8 bg-black/30 p-3 font-mono text-[11px] leading-relaxed">
+            {fix.patchDiff.split("\n").map((line: string, i: number) => (
+              <div
+                key={i}
+                className={
+                  line.startsWith("+")
+                    ? "text-emerald-400"
+                    : line.startsWith("-")
+                      ? "text-red-400"
+                      : "text-white/30"
+                }
+              >
+                {line}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* verification notes */}
+      {fix?.verificationNotes && (
+        <div className="rounded-lg border border-white/8 bg-white/[0.02] px-3 py-2.5">
+          <p className="text-[10px] font-medium uppercase tracking-wider text-white/20 mb-1">
+            Verification
+          </p>
+          <p className="text-[12px] text-white/50">{fix.verificationNotes}</p>
+        </div>
+      )}
+
+      {/* regression warning */}
+      {fix?.verificationStatus === "REGRESSION" && (
+        <div className="flex items-start gap-2 rounded-lg border border-amber-500/25 bg-amber-500/8 p-3">
+          <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-amber-400 mt-0.5" />
+          <p className="text-[12px] text-amber-400/80">
+            New issues introduced by the fix. Review the patch carefully
+            before merging.
+          </p>
+        </div>
+      )}
+
+      {/* PR link */}
+      {fix?.prUrl && (
+        <a
+          href={fix.prUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex items-center gap-2 rounded-xl border border-blue-500/25 bg-blue-500/8 px-3 py-2.5 text-[12.5px] font-medium text-blue-400 hover:bg-blue-500/15 transition-colors"
+        >
+          <GitPullRequest className="h-3.5 w-3.5" />
+          View PR #{fix.prNumber} on GitHub
+          <ExternalLink className="h-3 w-3 ml-auto opacity-50" />
+        </a>
       )}
     </div>
   );
