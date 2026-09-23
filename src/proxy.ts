@@ -34,6 +34,8 @@ const isProtectedRoute = createRouteMatcher([
   "/api/sentra(.*)",
   "/api/sentra/attack-paths(.*)",
   "/api/sentra/fix(.*)",
+  "/api/sentra/report(.*)",
+  "/api/sentra/attack-paths/graph(.*)",
 ]);
 
 export default clerkMiddleware(async (auth, req) => {

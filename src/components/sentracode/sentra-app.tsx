@@ -8,6 +8,7 @@ import {
   Bug,
   GitPullRequest,
   Settings,
+  GitGraph,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { OverviewPage } from "./pages/overview-page";
@@ -16,6 +17,7 @@ import { RepoDetailPage } from "./pages/repo-detail-page";
 import { VulnerabilitiesPage } from "./pages/vulnerabilities-page";
 import { PullRequestsPage } from "./pages/pull-requests-page";
 import { SentraSettingsPage } from "./pages/sentra-settings-page";
+import { AttackGraphPage } from "./pages/attack-graph-page";
 
 type Page =
   | "overview"
@@ -23,6 +25,7 @@ type Page =
   | "repo-detail"
   | "vulnerabilities"
   | "pull-requests"
+  | "attack-graph"
   | "settings";
 
 const NAV = [
@@ -39,6 +42,7 @@ const NAV = [
     items: [
       { id: "vulnerabilities", label: "Vulnerabilities", Icon: Bug },
       { id: "pull-requests", label: "Pull requests", Icon: GitPullRequest },
+      { id: "attack-graph", label: "Attack graph", Icon: GitGraph },
     ],
   },
   {
@@ -129,6 +133,7 @@ export function SentraCodeApp() {
           {page === "repo-detail" && <RepoDetailPage repoId={pageExtra.repoId as string} />}
           {page === "vulnerabilities" && <VulnerabilitiesPage />}
           {page === "pull-requests" && <PullRequestsPage />}
+          {page === "attack-graph" && <AttackGraphPage />}
           {page === "settings" && <SentraSettingsPage onNavigate={go} />}
         </div>
       </div>
