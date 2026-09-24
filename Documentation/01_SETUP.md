@@ -1,6 +1,6 @@
 # Echo — Setup Guide
 
-Complete environment setup, from an empty folder to a fully running local development environment. Every step is in the order it was actually performed.
+Complete environment setup Echo-Saas, from an empty folder to a fully running local development environment. Every step is in the order it was actually performed.
 
 ---
 
@@ -28,7 +28,7 @@ Prompts answered:
 ```powershell
 TypeScript                 → Yes
 ESLint                     → Yes
-Tailwind CSS               → Yes
+ailwind CSS               → Yes
 src/ directory             → Yes
 App Router                 → Yes
 Import alias (@/*)         → No (default)
