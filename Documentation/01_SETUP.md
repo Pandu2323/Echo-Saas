@@ -63,7 +63,7 @@ mkdir -p src/components/ui src/lib src/server src/types prisma
 ```
 
 | Folder | Purpose |
-|---|---|
+| --- | --- |
 | `src/components/ui` | shadcn/ui components |
 | `src/lib` | Shared utilities, DB client, third-party SDK clients |
 | `src/server` | Express/Socket.io real-time server (separate deploy) |
@@ -124,7 +124,7 @@ Should return exactly one match.
 
 ### Create free Neon Postgres database
 
-1. https://neon.tech → sign up free (GitHub login, no card)
+1. <https://neon.tech> → sign up free (GitHub login, no card)
 2. Create project `echo`
 3. Copy the pooled connection string
 
@@ -223,7 +223,7 @@ npx prisma studio
 
 ## 5. Authentication — Clerk
 
-1. https://clerk.com → sign up, create application `echo`
+1. <https://clerk.com> → sign up, create application `echo`
 2. Enable Email + Google sign-in methods
 3. Copy API keys into `.env`:
 
@@ -312,7 +312,7 @@ ngrok http 3000 --domain=your-reserved-name.ngrok-free.app
 
 R2 was the original plan but requires a card on file even on the free tier. Supabase Storage requires no card.
 
-1. https://supabase.com → sign up free, create project `echo`
+1. <https://supabase.com> → sign up free, create project `echo`
 2. Storage → New bucket → name `videos` → toggle **Public bucket** on
 3. Settings → API → copy Project URL and `service_role` key (not `anon`)
 
@@ -332,7 +332,7 @@ npm install @supabase/supabase-js
 
 ## 7. Payments — Stripe
 
-1. https://stripe.com → sign up, stay in **Test mode**
+1. <https://stripe.com> → sign up, stay in **Test mode**
 2. Developers → API keys → copy publishable + secret keys
 3. Product catalog → create "Echo Pro" product, $12/month recurring → copy the Price ID
 
@@ -361,7 +361,7 @@ stripe listen --forward-to localhost:3000/api/webhooks/stripe
 
 Copy the printed `whsec_...` into `.env` as `STRIPE_WEBHOOK_SECRET`. Like ngrok, this regenerates on every CLI restart — re-sync after restarting.
 
-Enable the Customer Portal once, in test mode: https://dashboard.stripe.com/test/settings/billing/portal → Activate test link.
+Enable the Customer Portal once, in test mode: <https://dashboard.stripe.com/test/settings/billing/portal> → Activate test link.
 
 ---
 
@@ -429,7 +429,7 @@ npm install --save-dev @types/d3
 
 This is a **separate Python service**, not part of the Next.js app, because Chroma + sentence-transformers need a Python runtime.
 
-```
+```bash
 echo/
 └── chroma-service/
     ├── main.py
@@ -438,7 +438,8 @@ echo/
 ```
 
 `requirements.txt`:
-```
+
+```bash
 fastapi==0.115.0
 uvicorn==0.30.6
 chromadb==0.5.15
@@ -452,16 +453,19 @@ python-multipart==0.0.9
 ```
 
 ### Local development
+
 ```powershell
 cd chroma-service
 pip install -r requirements.txt
 uvicorn main:app --host 0.0.0.0 --port 8000
 ```
-```
+
+```bash
 CHROMA_SERVICE_URL="http://localhost:8000"
 ```
 
 ### Production deployment (Render)
+
 1. Push `chroma-service/` to its own repo (or as a subfolder with Root Directory set)
 2. Render → New Web Service → connect repo
 3. Root Directory: `chroma-service`
@@ -471,7 +475,8 @@ CHROMA_SERVICE_URL="http://localhost:8000"
 7. Deploy (~3-5 min first build — downloads the embedding model)
 
 Update `.env` with the Render URL:
-```
+
+```bash
 CHROMA_SERVICE_URL="https://echo-nemo-chroma.onrender.com"
 ```
 
@@ -481,13 +486,16 @@ CHROMA_SERVICE_URL="https://echo-nemo-chroma.onrender.com"
 
 ## 14. Agent Key Encryption
 
-```
+```bash
 ENCRYPTION_SECRET="<32-byte hex string>"
 ```
+
 Generate one:
+
 ```powershell
 node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 ```
+
 AES-256-GCM encryption (`src/lib/crypto.ts`) — user-provided third-party API keys (Claude/OpenAI/Gemini/Mistral) are encrypted before being written to Postgres, never stored or logged in plaintext.
 
 ---
@@ -499,7 +507,8 @@ npm install --save-dev electron electron-builder concurrently wait-on cross-env 
 ```
 
 Folder structure:
-```
+
+```bash
 echo/
 └── electron/
     ├── main.ts        # main process — window, tray, IPC handlers
@@ -511,6 +520,7 @@ echo/
 ```
 
 `package.json` scripts:
+
 ```json
 "electron:compile": "tsc -p electron/tsconfig.json",
 "electron:dev": "concurrently \"npm run dev\" \"wait-on http://localhost:3000 && cross-env NODE_ENV=development electron .electron/main.js\"",
@@ -518,18 +528,19 @@ echo/
 ```
 
 Run locally:
+
 ```powershell
 npm run electron:compile
 npm run electron:dev
 ```
 
-**Icon conversion** (no card-free built-in tool): use https://cloudconvert.com to convert a source PNG to `.ico` (Windows) and `.icns` (macOS).
+**Icon conversion** (no card-free built-in tool): use <https://cloudconvert.com> to convert a source PNG to `.ico` (Windows) and `.icns` (macOS).
 
 ---
 
 ## 16. Final `.env` (complete reference)
 
-```
+```bash
 # Database
 DATABASE_URL=""
 
@@ -586,6 +597,7 @@ stripe listen --forward-to localhost:3000/api/webhooks/stripe
 ```
 
 Optional fifth terminal for the desktop shell:
+
 ```powershell
 npm run electron:dev
 ```
@@ -595,7 +607,7 @@ npm run electron:dev
 ## 18. Production Deployment Summary
 
 | Component | Platform | Notes |
-|---|---|---|
+| --- | --- | --- |
 | Next.js app | Vercel | Auto-deploys from GitHub push |
 | Chroma RAG service | Render | Persistent disk required for vector data |
 | Postgres database | Neon | Run `npx prisma migrate deploy` after schema changes |
