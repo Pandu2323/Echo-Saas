@@ -94,6 +94,7 @@ model Workspace {
   events SchedulerEvent[]
   sentraRepos    SentraRepo[]
   sentraSettings SentraSettings?
+  sentraPolicies  SentraPolicy[]
 }
 
 model Membership {
@@ -565,6 +566,12 @@ model SentraRepo {
   scans         SentraScan[]
 
   @@unique([workspaceId, fullName])
+
+  attackPaths     SentraAttackPath[]
+  secretFindings  SentraSecretFinding[]
+  scaFindings     SentraSCAFinding[]
+  commitDiffs     SentraCommitSecurityDiff[]
+  scanJobs        SentraScanJob[]
 }
 
 model SentraScan {
@@ -583,6 +590,11 @@ model SentraScan {
   repoId        String
 
   findings      SentraFinding[]
+  attackPaths     SentraAttackPath[]
+  secretFindings  SentraSecretFinding[]
+  scaFindings     SentraSCAFinding[]
+  agentRuns       SentraAgentRun[]
+  job             SentraScanJob?
 }
 
 model SentraFinding {
@@ -595,7 +607,7 @@ model SentraFinding {
   cwe             String?         // CWE-89, CWE-79 etc
   rule            String?
   snippet         String?         @db.Text  // vulnerable code snippet
-  fix             String?         @db.Text  // AI suggested fix
+  aiFix             String?         @db.Text  // AI suggested fix
   diffBefore      String?         @db.Text
   diffAfter       String?         @db.Text
   status          FindingStatus   @default(OPEN)
@@ -609,6 +621,7 @@ model SentraFinding {
 
   scan            SentraScan      @relation(fields: [scanId], references: [id], onDelete: Cascade)
   scanId          String
+  fix             SentraFixVerification?
 }
 
 model SentraCommit {
@@ -644,4 +657,201 @@ model SentraSettings {
 
   workspace           Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   workspaceId         String    @unique
+}
+
+enum AttackPathSeverity {
+  CRITICAL
+  HIGH
+  MEDIUM
+  LOW
+}
+
+enum FixStatus {
+  PENDING
+  GENERATED
+  PR_CREATED
+  VERIFIED
+  FAILED
+}
+
+enum JobStatus {
+  QUEUED
+  RUNNING
+  COMPLETED
+  FAILED
+}
+
+enum ScanLayer {
+  SAST
+  SECRETS
+  SCA
+  OWASP
+  API_SECURITY
+  SUPPLY_CHAIN
+  AI_REASONING
+}
+
+// Multi-step attack path identified by AI reasoning
+model SentraAttackPath {
+  id            String              @id @default(cuid())
+  title         String
+  description   String              @db.Text
+  severity      AttackPathSeverity
+  steps         Json                // array of {stepNumber, file, line, action, description}
+  affectedFiles Json                // string[]
+  attackVector  String?             // "network" | "local" | "physical"
+  cveIds        Json?               // string[]
+  cvssScore     Float?
+  exploitability String?            // "High" | "Medium" | "Low"
+  businessImpact String?
+  remediation   String?             @db.Text
+  isVerified    Boolean             @default(false)
+  createdAt     DateTime            @default(now())
+
+  scan          SentraScan          @relation(fields: [scanId], references: [id], onDelete: Cascade)
+  scanId        String
+
+  repo          SentraRepo          @relation(fields: [repoId], references: [id], onDelete: Cascade)
+  repoId        String
+}
+
+// Secrets / credentials found in code
+model SentraSecretFinding {
+  id          String        @id @default(cuid())
+  secretType  String        // "API_KEY" | "PASSWORD" | "TOKEN" | "PRIVATE_KEY" | "CONNECTION_STRING"
+  filePath    String
+  lineNumber  Int?
+  entropy     Float?        // Shannon entropy score
+  matchedRule String?
+  snippet     String?       @db.Text  // redacted — first/last 4 chars only
+  severity    FindingSeverity
+  isVerified  Boolean       @default(false) // confirmed real secret vs false positive
+  status      FindingStatus @default(OPEN)
+  createdAt   DateTime      @default(now())
+
+  scan        SentraScan    @relation(fields: [scanId], references: [id], onDelete: Cascade)
+  scanId      String
+
+  repo        SentraRepo    @relation(fields: [repoId], references: [id], onDelete: Cascade)
+  repoId      String
+}
+
+// Software Composition Analysis — vulnerable dependencies
+model SentraSCAFinding {
+  id              String        @id @default(cuid())
+  packageName     String
+  packageVersion  String
+  ecosystem       String        // "npm" | "pypi" | "maven" | "go"
+  vulnerabilityId String?       // CVE-XXXX-XXXXX or GHSA-xxx
+  severity        FindingSeverity
+  title           String
+  description     String?       @db.Text
+  fixedVersion    String?
+  manifestFile    String        // package.json, requirements.txt etc
+  isDirect        Boolean       @default(true)
+  isTransitive    Boolean       @default(false)
+  status          FindingStatus @default(OPEN)
+  createdAt       DateTime      @default(now())
+
+  scan            SentraScan    @relation(fields: [scanId], references: [id], onDelete: Cascade)
+  scanId          String
+
+  repo            SentraRepo    @relation(fields: [repoId], references: [id], onDelete: Cascade)
+  repoId          String
+}
+
+// Fix generation + PR creation + verification result
+model SentraFixVerification {
+  id                String      @id @default(cuid())
+  status            FixStatus   @default(PENDING)
+  originalCode      String?     @db.Text
+  fixedCode         String?     @db.Text
+  patchDiff         String?     @db.Text
+  prUrl             String?
+  prNumber          Int?
+  branchName        String?
+  verificationStatus String?    // "RESOLVED" | "UNRESOLVED" | "REGRESSION"
+  verificationNotes String?     @db.Text
+  reScanFindingCount Int        @default(0)
+  createdAt         DateTime    @default(now())
+  verifiedAt        DateTime?
+
+  finding           SentraFinding @relation(fields: [findingId], references: [id], onDelete: Cascade)
+  findingId         String        @unique
+}
+
+// Per-commit security diff — tracks security changes over time
+model SentraCommitSecurityDiff {
+  id                  String   @id @default(cuid())
+  sha                 String
+  parentSha           String?
+  newFindings         Int      @default(0)
+  resolvedFindings    Int      @default(0)
+  newCriticals        Int      @default(0)
+  newSecrets          Int      @default(0)
+  riskScoreBefore     String?
+  riskScoreAfter      String?
+  isRegression        Boolean  @default(false)  // worse than parent
+  securityDelta       Int      @default(0)       // positive = more issues
+  aiSummary           String?  @db.Text
+  committedAt         DateTime
+  createdAt           DateTime @default(now())
+
+  repo                SentraRepo @relation(fields: [repoId], references: [id], onDelete: Cascade)
+  repoId              String
+}
+
+// Async scan job queue
+model SentraScanJob {
+  id          String    @id @default(cuid())
+  status      JobStatus @default(QUEUED)
+  layers      Json      // ScanLayer[] — which scan types to run
+  priority    Int       @default(5) // 1-10
+  triggeredBy String    // "manual" | "push" | "pr" | "nightly" | "cli"
+  startedAt   DateTime?
+  completedAt DateTime?
+  errorMessage String?
+  createdAt   DateTime  @default(now())
+
+  scan        SentraScan  @relation(fields: [scanId], references: [id], onDelete: Cascade)
+  scanId      String      @unique
+
+  repo        SentraRepo  @relation(fields: [repoId], references: [id], onDelete: Cascade)
+  repoId      String
+}
+
+// AI agent run log — which agent ran, what it found
+model SentraAgentRun {
+  id           String   @id @default(cuid())
+  agentType    String   // "VulnDetect" | "CodeFlow" | "AttackPath" | "Risk" | "Explain" | "Fix" | "Verify"
+  inputTokens  Int      @default(0)
+  outputTokens Int      @default(0)
+  durationMs   Int      @default(0)
+  findingsIn   Int      @default(0)  // findings fed in
+  findingsOut  Int      @default(0)  // findings produced/kept
+  rawOutput    String?  @db.Text
+  error        String?
+  createdAt    DateTime @default(now())
+
+  scan         SentraScan @relation(fields: [scanId], references: [id], onDelete: Cascade)
+  scanId       String
+}
+
+// Workspace security policies
+model SentraPolicy {
+  id               String   @id @default(cuid())
+  name             String
+  description      String?
+  blockOnCritical  Boolean  @default(true)   // block PR merge if critical found
+  blockOnSecrets   Boolean  @default(true)   // block PR if secrets found
+  maxCriticals     Int      @default(0)      // max allowed criticals before blocking
+  maxWarnings      Int      @default(10)
+  requireVerify    Boolean  @default(false)  // require AI fix verification
+  enforcedBranches Json     @default("[]")  // string[] — e.g. ["main", "prod"]
+  isActive         Boolean  @default(true)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  workspace        Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  workspaceId      String
 }

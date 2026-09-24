@@ -1,19 +1,28 @@
-import { auth } from "@clerk/nextjs/server";
 import { db } from "@/lib/db";
 import { NextResponse } from "next/server";
-import { fetchRepoInfo, fetchRepoLanguages, parseGitHubUrl } from "@/lib/github";
+import {
+  fetchRepoInfo,
+  fetchRepoLanguages,
+  parseGitHubUrl,
+} from "@/lib/github";
+import { requireSentraAuth } from "@/lib/sentra-cli-auth";
 
 // GET — list connected repos
 export async function GET(req: Request) {
-  const { userId } = await auth();
-  if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const ctx = await requireSentraAuth(req);
+  if (!ctx)
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { searchParams } = new URL(req.url);
-  const workspaceId = searchParams.get("workspaceId");
-  if (!workspaceId) return NextResponse.json({ error: "workspaceId required" }, { status: 400 });
+  const workspaceId = searchParams.get("workspaceId") ?? ctx.workspaceId;
+  if (!workspaceId)
+    return NextResponse.json(
+      { error: "workspaceId required" },
+      { status: 400 },
+    );
 
-  const user = await db.user.findUnique({ where: { clerkId: userId } });
-  if (!user) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  // const user = await db.user.findUnique({ where: { clerkId: userId } });
+  // if (!user) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   const repos = await db.sentraRepo.findMany({
     where: { workspaceId },
@@ -32,13 +41,18 @@ export async function GET(req: Request) {
 
 // POST — connect a new repo
 export async function POST(req: Request) {
-  const { userId } = await auth();
-  if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const ctx = await requireSentraAuth(req);
+if (!ctx) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const { workspaceId, githubUrl } = await req.json();
+const body = await req.json();
+const workspaceId = body.workspaceId ?? ctx.workspaceId;
+const githubUrl = body.githubUrl;
 
   if (!workspaceId || !githubUrl) {
-    return NextResponse.json({ error: "workspaceId and githubUrl required" }, { status: 400 });
+    return NextResponse.json(
+      { error: "workspaceId and githubUrl required" },
+      { status: 400 },
+    );
   }
 
   const parsed = parseGitHubUrl(githubUrl);
@@ -46,27 +60,40 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Invalid GitHub URL" }, { status: 400 });
   }
 
-  const user = await db.user.findUnique({ where: { clerkId: userId } });
-  if (!user) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  // const user = await db.user.findUnique({ where: { clerkId: userId } });
+  // if (!user) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   // check if already connected
   const existing = await db.sentraRepo.findUnique({
-    where: { workspaceId_fullName: { workspaceId, fullName: `${parsed.owner}/${parsed.repo}` } },
+    where: {
+      workspaceId_fullName: {
+        workspaceId,
+        fullName: `${parsed.owner}/${parsed.repo}`,
+      },
+    },
   });
   if (existing) {
-    return NextResponse.json({ error: "Repository already connected" }, { status: 400 });
+    return NextResponse.json(
+      { error: "Repository already connected" },
+      { status: 400 },
+    );
   }
 
   // get GitHub token from settings
-  const settings = await db.sentraSettings.findUnique({ where: { workspaceId } });
-  const token    = settings?.githubToken ?? undefined;
+  const settings = await db.sentraSettings.findUnique({
+    where: { workspaceId },
+  });
+  const token = settings?.githubToken ?? undefined;
 
   // fetch repo info from GitHub
   const repoInfo = await fetchRepoInfo(parsed.owner, parsed.repo, token);
   if (!repoInfo) {
     return NextResponse.json(
-      { error: "Repository not found or not accessible. For private repos, add a GitHub token in Settings." },
-      { status: 404 }
+      {
+        error:
+          "Repository not found or not accessible. For private repos, add a GitHub token in Settings.",
+      },
+      { status: 404 },
     );
   }
 
@@ -76,18 +103,18 @@ export async function POST(req: Request) {
     data: {
       workspaceId,
       githubUrl,
-      owner:         parsed.owner,
-      repoName:      parsed.repo,
-      fullName:      repoInfo.full_name,
-      description:   repoInfo.description ?? null,
-      isPrivate:     repoInfo.private,
+      owner: parsed.owner,
+      repoName: parsed.repo,
+      fullName: repoInfo.full_name,
+      description: repoInfo.description ?? null,
+      isPrivate: repoInfo.private,
       defaultBranch: repoInfo.default_branch,
-      language:      repoInfo.language ?? null,
-      languages:     languages,
-      stars:         repoInfo.stargazers_count,
-      forks:         repoInfo.forks_count,
-      openIssues:    repoInfo.open_issues_count,
-      scanStatus:    "PENDING",
+      language: repoInfo.language ?? null,
+      languages: languages,
+      stars: repoInfo.stargazers_count,
+      forks: repoInfo.forks_count,
+      openIssues: repoInfo.open_issues_count,
+      scanStatus: "PENDING",
     },
   });
 

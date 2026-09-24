@@ -11,9 +11,9 @@ npm run dev
 
 ```
 
-### End to End Pipeline
+### End to End Architecture
 
-![alt text](images/echo_roadmap.png)
+![alt text](images/E.png)
 
 Open Prisma Studio:
 

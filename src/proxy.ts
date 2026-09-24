@@ -1,4 +1,9 @@
 import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
+import { NextResponse } from "next/server";
+
+const isSentraApiRoute = createRouteMatcher([
+  "/api/sentra(.*)",
+]);
 
 const isProtectedRoute = createRouteMatcher([
   "/overview(.*)",
@@ -27,9 +32,21 @@ const isProtectedRoute = createRouteMatcher([
   "/api/scheduler(.*)",
   "/sentracode(.*)",
   "/api/sentra(.*)",
+  "/api/sentra/attack-paths(.*)",
+  "/api/sentra/fix(.*)",
+  "/api/sentra/report(.*)",
+  "/api/sentra/attack-paths/graph(.*)",
 ]);
 
 export default clerkMiddleware(async (auth, req) => {
+  const isCliRequest =
+    req.headers.get("x-sentra-cli") === "1" ||
+    Boolean(req.headers.get("x-sentra-apikey"));
+
+  if (isSentraApiRoute(req) && isCliRequest) {
+    return NextResponse.next();
+  }
+
   if (isProtectedRoute(req)) {
     await auth.protect();
   }

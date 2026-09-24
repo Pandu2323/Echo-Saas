@@ -1,17 +1,18 @@
-import { auth } from "@clerk/nextjs/server";
 import { db } from "@/lib/db";
 import { NextResponse } from "next/server";
 import { fetchRepoCommits } from "@/lib/github";
+import { requireSentraAuth } from "@/lib/sentra-cli-auth";
 
 export async function GET(
   req: Request,
   { params }: { params: Promise<{ repoId: string }> }
 ) {
-  const { userId } = await auth();
-  if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const ctx = await requireSentraAuth(req);
+if (!ctx) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+const { searchParams } = new URL(req.url);
 
   const { repoId } = await params;
-  const { searchParams } = new URL(req.url);
   const refresh = searchParams.get("refresh") === "true";
 
   const repo = await db.sentraRepo.findUnique({
