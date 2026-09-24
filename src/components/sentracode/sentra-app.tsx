@@ -8,7 +8,7 @@ import {
   Bug,
   GitPullRequest,
   Settings,
-  GitGraph,
+  ShieldCheck,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { OverviewPage } from "./pages/overview-page";
@@ -42,7 +42,7 @@ const NAV = [
     items: [
       { id: "vulnerabilities", label: "Vulnerabilities", Icon: Bug },
       { id: "pull-requests", label: "Pull requests", Icon: GitPullRequest },
-      { id: "attack-graph", label: "Attack graph", Icon: GitGraph },
+      { id: "attack-graph", label: "Security posture", Icon: ShieldCheck },
     ],
   },
   {
